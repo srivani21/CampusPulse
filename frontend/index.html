@@ -1,0 +1,1450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UAH CampusPulse | Charger Live Intelligence</title>
+
+  <!-- React & Babel -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            /* UAH Newsletter light-mode palette */
+            'uah-royal':  '#0058A4',   /* primary header / nav bg     */
+            'uah-navy':   '#003366',   /* hover / dark accent          */
+            'uah-navtab': '#1A64B7',   /* active nav tab               */
+            'uah-page':   '#F4F7FA',   /* page background              */
+            'uah-card':   '#FFFFFF',   /* card containers              */
+            'uah-border': '#E2E8F0',   /* card borders                 */
+            'uah-gold':   '#FFE27A',   /* highlight / badge accent     */
+            'uah-text':   '#1E293B',   /* primary text                 */
+            'uah-muted':  '#475569',   /* secondary / label text       */
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body { background:#F4F7FA; font-family:'Segoe UI',system-ui,sans-serif; color:#1E293B; }
+
+    /* ── Live ticker ── */
+    .ticker-outer { background:#0058A4; border-bottom:2px solid #FFE27A; }
+    .ticker-label { background:#FFE27A; color:#003366; font-weight:800; font-size:11px;
+                    padding:3px 12px; letter-spacing:.1em; flex-shrink:0; text-transform:uppercase; }
+    .ticker-track { overflow:hidden; flex:1; white-space:nowrap; }
+    .ticker-move  { display:inline-block; animation:tickerScroll 120s linear infinite; }
+    @keyframes tickerScroll { from{transform:translateX(100%)} to{transform:translateX(-100%)} }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:#F4F7FA; }
+    ::-webkit-scrollbar-thumb { background:#CBD5E1; border-radius:4px; }
+
+    /* ── Animations ── */
+    .fade-in { animation:fadeUp .3s ease both; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+    .pulse-ring { animation:pulseRing 2s ease-in-out infinite; }
+    @keyframes pulseRing { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    /* ── Modal backdrop ── */
+    .modal-backdrop { backdrop-filter:blur(6px); background:rgba(0,51,102,.45); }
+
+    /* ── Leaflet map ── */
+    #uah-map { height:380px; width:100%; border-radius:10px; z-index:1; }
+
+    /* ── Leaflet popup (white card style) ── */
+    .leaflet-popup-content-wrapper {
+      background:#ffffff !important;
+      border:1px solid #E2E8F0 !important;
+      border-radius:10px !important;
+      color:#1E293B !important;
+      box-shadow:0 4px 20px rgba(0,88,164,.15) !important;
+    }
+    .leaflet-popup-tip { background:#ffffff !important; }
+    .leaflet-popup-content { margin:12px 16px !important; min-width:200px; }
+    .popup-title { font-weight:700; font-size:13px; color:#0058A4; margin-bottom:3px; }
+    .popup-sub   { font-size:11px; color:#475569; margin-bottom:8px; }
+    .popup-stat  { font-size:13px; font-weight:600; color:#1E293B; margin-bottom:10px; }
+    .popup-btns  { display:flex; gap:6px; }
+    .popup-btn   { flex:1; padding:6px 0; border:none; border-radius:6px; font-size:12px;
+                   font-weight:700; cursor:pointer; transition:background .15s; }
+    .popup-btn-in  { background:#0058A4; color:#ffffff; }
+    .popup-btn-in:hover  { background:#003366; }
+    .popup-btn-out { background:#F1F5F9; color:#475569; border:1px solid #E2E8F0; }
+    .popup-btn-out:hover { background:#E2E8F0; }
+
+    /* ── Tabs ── */
+    .tab-active   { border-bottom:3px solid #FFE27A; color:#ffffff; font-weight:700; }
+    .tab-inactive { border-bottom:3px solid transparent; color:rgba(255,255,255,.65); }
+    .tab-inactive:hover { color:#ffffff; border-bottom-color:rgba(255,255,255,.3); }
+
+    /* ── Demo login dropdown ── */
+    .login-dropdown { position:relative; display:inline-block; }
+    .login-menu {
+      position:absolute; right:0; top:calc(100% + 8px); min-width:230px;
+      background:#ffffff; border:1px solid #E2E8F0; border-radius:10px;
+      box-shadow:0 8px 24px rgba(0,88,164,.15); z-index:500; overflow:hidden;
+      animation:fadeUp .2s ease both;
+    }
+    .login-menu-item { padding:11px 16px; cursor:pointer; font-size:13px;
+                       transition:background .12s; border-bottom:1px solid #F1F5F9;
+                       color:#1E293B; }
+    .login-menu-item:last-child { border-bottom:none; }
+    .login-menu-item:hover { background:#F4F7FA; }
+    .login-menu-item.active-user { background:#EFF6FF; color:#0058A4; }
+
+    /* ── Push toast ── */
+    .push-toast {
+      display:flex; align-items:flex-start; gap:10px;
+      background:#ffffff; border:1px solid #0058A4; border-left:4px solid #0058A4;
+      border-radius:10px; padding:12px 16px; max-width:320px;
+      box-shadow:0 4px 20px rgba(0,88,164,.2);
+      animation:toastIn .35s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    .push-toast.hiding { animation:toastOut .3s ease forwards; }
+    .push-toast-icon  { font-size:20px; flex-shrink:0; }
+    .push-toast-title { font-size:12px; font-weight:700; color:#0058A4; margin-bottom:2px; }
+    .push-toast-body  { font-size:12px; color:#475569; line-height:1.45; }
+    .push-toast-close { background:none; border:none; color:#94A3B8; cursor:pointer;
+                        font-size:16px; margin-left:auto; padding:0 0 0 8px; flex-shrink:0; }
+    .push-toast-close:hover { color:#0058A4; }
+
+    /* ── SMS toast ── */
+    .sms-toast {
+      display:flex; align-items:flex-start; gap:10px;
+      background:#ffffff; border:1px solid #22C55E; border-left:4px solid #22C55E;
+      border-radius:10px; padding:12px 16px; max-width:320px;
+      box-shadow:0 4px 20px rgba(34,197,94,.18);
+      animation:toastIn .35s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    .sms-toast.hiding { animation:toastOut .3s ease forwards; }
+    @keyframes toastIn  { from{opacity:0;transform:translateX(110%)} to{opacity:1;transform:none} }
+    @keyframes toastOut { from{opacity:1;transform:none} to{opacity:0;transform:translateX(110%)} }
+    .sms-toast-icon  { font-size:22px; flex-shrink:0; margin-top:1px; }
+    .sms-toast-title { font-size:12px; font-weight:700; color:#16A34A; margin-bottom:2px; }
+    .sms-toast-body  { font-size:12px; color:#475569; line-height:1.4; }
+    .sms-toast-close { background:none; border:none; color:#94A3B8; cursor:pointer;
+                       font-size:16px; line-height:1; margin-left:auto; padding:0 0 0 8px; flex-shrink:0; }
+    .sms-toast-close:hover { color:#22C55E; }
+
+    /* ── Card base ── */
+    .cp-card {
+      background:#ffffff; border:1px solid #E2E8F0;
+      border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,.05);
+    }
+
+    /* ── Primary button ── */
+    .btn-primary { background:#0058A4; color:#ffffff; font-weight:700; border:none;
+                   border-radius:8px; cursor:pointer; transition:background .15s; }
+    .btn-primary:hover:not(:disabled) { background:#003366; }
+    .btn-primary:disabled { opacity:.45; cursor:not-allowed; }
+
+    /* ── Input / select base ── */
+    .cp-input {
+      background:#ffffff; border:1px solid #E2E8F0; color:#1E293B;
+      border-radius:8px; padding:8px 12px; font-size:14px; outline:none;
+      transition:border-color .15s;
+    }
+    .cp-input:focus { border-color:#0058A4; box-shadow:0 0 0 3px rgba(0,88,164,.1); }
+
+    /* ── Section header ── */
+    .section-header { font-size:18px; font-weight:800; color:#1E293B; letter-spacing:-.01em; }
+  </style>
+</head>
+<body class="min-h-screen bg-uah-page">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const API    = 'http://localhost:8000';
+const WS_URL = 'ws://localhost:8000/ws/live-map';
+
+// UAH campus coordinates
+const UAH_CENTER = [34.7248, -86.6402];
+
+// UAH alert ticker messages
+const UAH_ALERTS = [
+  '⚡ Free pizza at Charger Union Room 112 — today 11:30 AM–1 PM while supplies last',
+  '🏀 UFC Basketball court open play until 9 PM tonight — no reservation needed',
+  '📚 Salmon Library 2nd Floor quiet hours active — please keep noise to a minimum',
+  '🎓 New study pods available on Salmon Library Floor 1 — see front desk for key card',
+  '🏋️ UFC Group Fitness: Yoga at 5 PM, HIIT at 6 PM — bring your Charger ID',
+  '🍕 Charger Village Food Court closes at 8 PM Friday — plan accordingly',
+  '🔬 SST open lab hours extended through finals week — Mon–Fri 7 AM–11 PM',
+  '📡 UAH WiFi maintenance Sunday 2–4 AM — connect via eduroam as backup',
+  '🏆 Charger esports tryouts — OKT Lab Room 201, Wednesday 6 PM',
+  '☕ Morton Hall vending machines restocked — coffee & snacks available 24/7',
+];
+
+// ── Dummy user profiles (mirrors backend DUMMY_USERS) ─────────────────────────
+const DUMMY_USERS = {
+  std_01: { user_id:'std_01', name:'Alex Charger', email:'alex@uah.edu', phone:'+12565550199', avatar:'AC' },
+  std_02: { user_id:'std_02', name:'Maya Lin',     email:'maya@uah.edu', phone:'+12565550288', avatar:'ML' },
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const crowdStatus = (pct) => pct < 40 ? 'Quiet' : pct <= 75 ? 'Moderate' : 'Crowded';
+
+const STATUS_COLORS = {
+  Quiet:    { text:'#16A34A', bg:'#F0FDF4', border:'#BBF7D0', hex:'#22C55E', dot:'bg-green-500' },
+  Moderate: { text:'#B45309', bg:'#FFFBEB', border:'#FDE68A', hex:'#F59E0B', dot:'bg-amber-400' },
+  Crowded:  { text:'#DC2626', bg:'#FFF1F2', border:'#FECDD3', hex:'#EF4444', dot:'bg-red-500' },
+};
+
+const catIcon = (cat) => cat === 'Study Area' ? '📚' : cat === 'Gym' ? '🏋️' : '🍽️';
+
+// ── UAH Alert Ticker ──────────────────────────────────────────────────────────
+function AlertTicker({ liveNotifs }) {
+  const allMsgs = [...UAH_ALERTS, ...liveNotifs.slice(-5)].join('   •   ');
+  return (
+    <div className="ticker-outer flex items-center h-8">
+      <div className="ticker-label hidden sm:block">LIVE</div>
+      <div className="ticker-track py-1">
+        <span className="ticker-move text-xs text-white font-medium px-6">
+          {allMsgs}&nbsp;&nbsp;&nbsp;&nbsp;{allMsgs}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── WS Status dot ─────────────────────────────────────────────────────────────
+function WsStatus({ connected }) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className={`w-2 h-2 rounded-full pulse-ring inline-block ${connected ? 'bg-emerald-400' : 'bg-red-400'}`}/>
+      <span className={connected ? 'text-emerald-400' : 'text-red-400'}>{connected ? 'Live' : 'Reconnecting'}</span>
+    </div>
+  );
+}
+
+// ── Demo Login Dropdown ───────────────────────────────────────────────────────
+function DemoLogin({ activeUser, onLogin, onLogout }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="login-dropdown" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 text-sm font-semibold px-3 py-1.5 rounded-lg transition"
+        style={{ background: activeUser ? '#EFF6FF' : '#F4F7FA', border:'1px solid #E2E8F0', color: activeUser ? '#0058A4' : '#475569' }}
+      >
+        {activeUser ? (
+          <>
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black" style={{background:'#0058A4', color:'#ffffff'}}>
+              {activeUser.avatar}
+            </span>
+            <span className="hidden sm:inline">{activeUser.name}</span>
+            <span className="text-xs">▾</span>
+          </>
+        ) : (
+          <>
+            <span>👤</span>
+            <span className="hidden sm:inline">Demo Login</span>
+            <span className="text-xs">▾</span>
+          </>
+        )}
+      </button>
+
+      {open && (
+        <div className="login-menu">
+          <div className="px-3 py-2 text-xs text-uah-muted font-semibold uppercase tracking-wider border-b border-uah-border">
+            Select Demo Account
+          </div>
+          {Object.values(DUMMY_USERS).map(u => (
+            <div
+              key={u.user_id}
+              className={`login-menu-item ${activeUser?.user_id === u.user_id ? 'active-user' : 'text-uah-muted'}`}
+              onClick={() => { onLogin(u); setOpen(false); }}
+            >
+              <div className="font-semibold">{u.name}</div>
+              <div className="text-xs opacity-60">{u.email}</div>
+            </div>
+          ))}
+          {activeUser && (
+            <div
+              className="login-menu-item text-red-400"
+              onClick={() => { onLogout(); setOpen(false); }}
+            >
+              Sign Out
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Push Notification Toast ───────────────────────────────────────────────────
+function PushToast({ toast, onDismiss }) {
+  const [hiding, setHiding] = useState(false);
+
+  useEffect(() => {
+    const hideTimer   = setTimeout(() => setHiding(true), 6000);
+    const removeTimer = setTimeout(onDismiss, 6400);
+    return () => { clearTimeout(hideTimer); clearTimeout(removeTimer); };
+  }, []);
+
+  const dismiss = () => { setHiding(true); setTimeout(onDismiss, 300); };
+
+  return (
+    <div className={`push-toast${hiding ? ' hiding' : ''}`}>
+      <span className="push-toast-icon">📲</span>
+      <div style={{flex:1}}>
+        <div className="push-toast-title">Push Notification</div>
+        <div className="push-toast-body">
+          You are registered for <strong style={{color:'#0058A4'}}>{toast.event_name}</strong>!<br/>
+          <span style={{color:'#475569'}}>📍 {toast.location_name}</span><br/>
+          <span style={{color:'#16A34A'}}>Reminder set. See you there! 🎓</span>
+        </div>
+      </div>
+      <button className="push-toast-close" onClick={dismiss}>✕</button>
+    </div>
+  );
+}
+
+// ── Leaflet Map Component ─────────────────────────────────────────────────────
+function LeafletMap({ locations, onTap }) {
+  const mapRef      = useRef(null);  // Leaflet map instance
+  const markersRef  = useRef({});    // id → { marker, popup }
+  const containerRef = useRef(null);
+  const tappingRef  = useRef({});
+
+  // Build popup HTML for a location
+  const buildPopupHtml = (loc) => {
+    const sc = STATUS_COLORS[loc.status] || STATUS_COLORS.Quiet;
+    const barW = Math.min(loc.crowd_percentage, 100);
+    return `
+      <div class="popup-title">${catIcon(loc.category)} ${loc.name}</div>
+      <div class="popup-sub">${loc.category}</div>
+      <div class="popup-stat" style="color:${sc.text}">
+        ${loc.current_count}/${loc.max_capacity} &nbsp;•&nbsp; ${loc.crowd_percentage}% 
+        <span style="font-size:11px;color:#475569">${loc.status}</span>
+      </div>
+      <div style="background:#F1F5F9;border-radius:4px;height:6px;margin-bottom:10px;overflow:hidden">
+        <div style="width:${barW}%;height:100%;background:${sc.hex};border-radius:4px;transition:width .6s"></div>
+      </div>
+      <div class="popup-btns">
+        <button class="popup-btn popup-btn-in"  onclick="window.__cpTap(${loc.id},'check_in')">➕ Check In</button>
+        <button class="popup-btn popup-btn-out" onclick="window.__cpTap(${loc.id},'check_out')">➖ Check Out</button>
+      </div>`;
+  };
+
+  // Create a coloured SVG circle marker
+  const makeIcon = (status) => {
+    const c = STATUS_COLORS[status] || STATUS_COLORS.Quiet;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+      <circle cx="16" cy="16" r="13" fill="${c.hex}" fill-opacity=".25" stroke="${c.hex}" stroke-width="2.5"/>
+      <circle cx="16" cy="16" r="6"  fill="${c.hex}"/>
+    </svg>`;
+    return L.divIcon({
+      html: svg,
+      className: '',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16],
+      popupAnchor: [0, -18],
+    });
+  };
+
+  // Expose tap handler to popup buttons (they live outside React)
+  useEffect(() => {
+    window.__cpTap = async (locId, action) => {
+      if (tappingRef.current[locId]) return;
+      tappingRef.current[locId] = true;
+      try {
+        await fetch(`${API}/api/tap`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ location_id: locId, action }),
+        });
+      } finally {
+        tappingRef.current[locId] = false;
+      }
+    };
+    return () => { delete window.__cpTap; };
+  }, []);
+
+  // Initialise map once
+  useEffect(() => {
+    if (mapRef.current || !containerRef.current) return;
+    const map = L.map(containerRef.current, {
+      center: UAH_CENTER,
+      zoom: 16,
+      zoomControl: true,
+    });
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // Dark-mode invert filter applied directly to the tile pane so UI overlays stay unaffected
+    // Light-mode OSM tiles — no invert filter needed
+    // map.getPanes().tilePane.style.filter = '';
+    mapRef.current = map;
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  // Add / update markers whenever locations change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !locations.length) return;
+
+    locations.forEach(loc => {
+      const existing = markersRef.current[loc.id];
+      const popupHtml = buildPopupHtml(loc);
+
+      if (existing) {
+        // Update icon colour if status changed
+        existing.marker.setIcon(makeIcon(loc.status));
+        // Refresh popup content
+        existing.marker.getPopup().setContent(popupHtml);
+      } else {
+        // Create new marker
+        const marker = L.marker([loc.latitude, loc.longitude], {
+          icon: makeIcon(loc.status),
+        }).addTo(map);
+        marker.bindPopup(popupHtml, { maxWidth: 260, minWidth: 230 });
+        markersRef.current[loc.id] = { marker };
+      }
+    });
+  }, [locations]);
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-uah-border shadow-lg">
+      <div ref={containerRef} id="uah-map" />
+      <div className="flex gap-5 px-4 py-2.5 bg-white text-xs text-uah-muted border-t border-uah-border">
+        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5"/>Quiet &lt;40%</span>
+        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-yellow-400 mr-1.5"/>Moderate 40–75%</span>
+        <span><span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-1.5"/>Crowded &gt;75%</span>
+        <span className="ml-auto text-uah-royal/60 font-medium">Click a pin for details</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Location Card ─────────────────────────────────────────────────────────────
+function LocationCard({ loc, onTap, tapping }) {
+  const sc  = STATUS_COLORS[loc.status] || STATUS_COLORS.Quiet;
+  const pct = loc.crowd_percentage;
+  return (
+    <div
+      className="rounded-xl border p-4 fade-in transition-all duration-500"
+      style={{ background: sc.bg, borderColor: sc.border }}
+    >
+      <div className="flex justify-between items-start mb-1.5">
+        <span className="font-semibold text-sm text-slate-900 leading-snug">
+          {catIcon(loc.category)} {loc.name}
+        </span>
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full ml-2 flex-shrink-0"
+          style={{ color: sc.text, background: 'rgba(255,255,255,.7)', border:`1px solid ${sc.border}` }}
+        >
+          {loc.status}
+        </span>
+      </div>
+      <div className="text-xs text-uah-muted mb-2">{loc.category}</div>
+
+      <div className="w-full bg-slate-100 rounded-full h-2 mb-1.5">
+        <div
+          className="h-2 rounded-full transition-all duration-700"
+          style={{ width: `${Math.min(pct, 100)}%`, background: sc.hex }}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-uah-muted mb-3">
+        <span>{loc.current_count}/{loc.max_capacity} people</span>
+        <span className="font-bold" style={{ color: sc.text }}>{pct}%</span>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={() => onTap(loc.id, 'check_in')}
+          disabled={tapping === loc.id}
+          className="flex-1 text-xs font-semibold py-1.5 rounded-lg transition disabled:opacity-40"
+          style={{ background:'#0058A4', color:'#ffffff' }}
+        >
+          {tapping === loc.id ? '…' : '➕ Check In'}
+        </button>
+        <button
+          onClick={() => onTap(loc.id, 'check_out')}
+          disabled={tapping === loc.id}
+          className="flex-1 text-xs font-semibold py-1.5 rounded-lg transition bg-slate-100 text-uah-muted border border-uah-border disabled:opacity-40 hover:bg-slate-200"
+        >
+          {tapping === loc.id ? '…' : '➖ Check Out'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Heatmap Tab ───────────────────────────────────────────────────────────────
+function HeatmapTab({ locations, setLocations, addNotification }) {
+  const [tapping, setTapping] = useState(null);
+  const [filter,  setFilter]  = useState('All');
+
+  const handleTap = async (locationId, action) => {
+    setTapping(locationId);
+    try {
+      const res = await fetch(`${API}/api/tap`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location_id: locationId, action }),
+      });
+      if (!res.ok) { const e = await res.json(); addNotification(`❌ ${e.detail}`); return; }
+      const updated = await res.json();
+      setLocations(prev => prev.map(l => l.id === updated.id ? updated : l));
+    } catch { addNotification('❌ Could not reach server'); }
+    finally { setTapping(null); }
+  };
+
+  const cats = ['All', 'Study Area', 'Gym', 'Dining Hall'];
+  const filtered = filter === 'All' ? locations : locations.filter(l => l.category === filter);
+
+  const stats = {
+    quiet:    locations.filter(l => l.status === 'Quiet').length,
+    moderate: locations.filter(l => l.status === 'Moderate').length,
+    crowded:  locations.filter(l => l.status === 'Crowded').length,
+  };
+
+  return (
+    <div className="space-y-5">
+      {/* Summary pills */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label:'Quiet',    val:stats.quiet,    ...STATUS_COLORS.Quiet },
+          { label:'Moderate', val:stats.moderate, ...STATUS_COLORS.Moderate },
+          { label:'Crowded',  val:stats.crowded,  ...STATUS_COLORS.Crowded },
+        ].map(s => (
+          <div key={s.label} className="rounded-xl border p-3 text-center" style={{background:s.bg, borderColor:s.border}}>
+            <div className="text-2xl font-bold" style={{color:s.text}}>{s.val}</div>
+            <div className="text-xs text-uah-muted">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Interactive Leaflet map */}
+      <LeafletMap locations={locations} />
+
+      {/* Category filter */}
+      <div className="flex gap-2 flex-wrap">
+        {cats.map(c => (
+          <button
+            key={c}
+            onClick={() => setFilter(c)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition font-medium ${
+              filter === c
+                ? 'text-uah-navy font-bold'
+                : 'border-uah-border text-uah-muted hover:border-uah-cyan/60'
+            }`}
+            style={filter === c ? { background:'#0058A4', borderColor:'#00A3E0' } : {}}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
+      {/* Location cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {filtered.map(loc => (
+          <LocationCard key={loc.id} loc={loc} onTap={handleTap} tapping={tapping} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Study Session Card ────────────────────────────────────────────────────────
+// ── SMS Toast Notification ────────────────────────────────────────────────────
+function SmsToast({ toast, onDismiss }) {
+  const [hiding, setHiding] = useState(false);
+
+  useEffect(() => {
+    const hideTimer   = setTimeout(() => setHiding(true), 5000);
+    const removeTimer = setTimeout(() => onDismiss(), 5400);
+    return () => { clearTimeout(hideTimer); clearTimeout(removeTimer); };
+  }, []);
+
+  const dismiss = () => { setHiding(true); setTimeout(onDismiss, 300); };
+
+  return (
+    <div className={`sms-toast${hiding ? ' hiding' : ''}`}>
+      <span className="sms-toast-icon">📱</span>
+      <div style={{flex:1}}>
+        <div className="sms-toast-title">SMS Notification Sent!</div>
+        <div className="sms-toast-body">
+          <strong style={{color:'#1E293B'}}>{toast.student_name}</strong> registered for{' '}
+          <strong style={{color:'#0058A4'}}>{toast.event_name}</strong>
+          <br/>
+          <span style={{color:'#16A34A'}}>📲 {toast.phone_masked}</span>
+        </div>
+      </div>
+      <button className="sms-toast-close" onClick={dismiss}>✕</button>
+    </div>
+  );
+}
+
+// ── Register for Event Modal ──────────────────────────────────────────────────
+function RegisterModal({ session, onClose, onRegistered }) {
+  const [form,    setForm]    = useState({ student_name: '', phone_number: '' });
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.student_name.trim()) { setError('Please enter your name.'); return; }
+    if (!form.phone_number.trim()) { setError('Please enter your phone number.'); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/api/events/${session.id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      const data = await res.json();
+      onRegistered(data);
+      onClose();
+    } catch (err) { setError(err.message || 'Registration failed. Try again.'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" onClick={onClose}>
+      <div
+        className="rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl border fade-in"
+        style={{ background:'#ffffff', borderColor:'#E2E8F0' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-start mb-4">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">🔔 Register for Event</h2>
+            <p className="text-xs text-uah-muted mt-0.5">
+              <span className="font-bold" style={{color:'#0058A4'}}>{session.course_code}</span>
+              {' · '}{session.room_name}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-uah-muted hover:text-slate-900 text-xl leading-none ml-3">✕</button>
+        </div>
+
+        {/* SMS info banner */}
+        <div className="rounded-lg px-3 py-2.5 mb-4 text-xs" style={{background:'#F0FDF4', border:'1px solid #BBF7D0'}}>
+          <span className="font-semibold" style={{color:'#16A34A'}}>📱 SMS confirmation</span>
+          <span className="text-uah-muted ml-1">will be sent to your phone number.</span>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">{error}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div>
+            <label className="text-xs text-uah-muted mb-1 block">Your Name *</label>
+            <input
+              value={form.student_name}
+              onChange={e => setForm({...form, student_name: e.target.value})}
+              placeholder="e.g. Alex Johnson"
+              autoFocus
+              className="cp-input w-full"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-uah-muted mb-1 block">Phone Number *</label>
+            <input
+              value={form.phone_number}
+              onChange={e => setForm({...form, phone_number: e.target.value})}
+              placeholder="+1 256 123 4567"
+              type="tel"
+              className="cp-input w-full"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full font-bold py-2.5 rounded-xl transition text-uah-navy disabled:opacity-50 mt-1"
+            style={{ background:'#0058A4' }}
+          >
+            {loading ? 'Registering…' : '📲 Register & Send SMS'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Study Session Card ────────────────────────────────────────────────────────
+function StudySessionCard({ session, onJoin, joining, onRegister }) {
+  const pct  = Math.round((session.current_participants / session.max_participants) * 100);
+  const full = session.current_participants >= session.max_participants;
+  return (
+    <div className="bg-white border border-uah-border rounded-xl p-4 fade-in hover:border-uah-royal/30 hover:shadow-md transition-all">
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span style={{background:'#FFE27A', color:'#003366', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:700}}>
+            {session.course_code}
+          </span>
+          {session.open_status && !full && (
+            <span className="text-xs px-2 py-0.5 rounded-full border font-medium text-green-700 bg-green-50 border-green-200">Open</span>
+          )}
+          {full && <span className="text-xs px-2 py-0.5 rounded-full border font-medium text-red-700 bg-red-50 border-red-200">Full</span>}
+          {!session.open_status && !full && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-uah-muted font-medium">Closed</span>}
+        </div>
+        <span className="text-uah-muted text-xs flex-shrink-0 ml-2">
+          {new Date(session.created_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+        </span>
+      </div>
+
+      <p className="text-uah-text font-semibold text-sm mb-1 leading-snug">{session.description || '—'}</p>
+      <p className="text-uah-muted text-xs mb-0.5">📍 {session.room_name}</p>
+      <p className="text-uah-muted text-xs mb-3">
+        👤 <span className="font-semibold text-uah-royal">{session.creator_name}</span>
+      </p>
+
+      <div className="w-full bg-slate-100 rounded-full h-1.5 mb-3">
+        <div className="h-1.5 rounded-full transition-all duration-500" style={{width:`${pct}%`, background:'#0058A4'}}/>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-uah-muted mr-auto">{session.current_participants}/{session.max_participants} members</span>
+        {/* Register button */}
+        <button
+          onClick={() => onRegister(session)}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          style={{ background:'#f0fdf4', color:'#16A34A', border:'1px solid #BBF7D0' }}
+          onMouseEnter={e => e.currentTarget.style.background='#0f3820'}
+          onMouseLeave={e => e.currentTarget.style.background='#f0fdf4'}
+        >
+          🔔 Register
+        </button>
+        {/* Join button */}
+        <button
+          onClick={() => onJoin(session.id)}
+          disabled={joining === session.id || full || !session.open_status}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background:'#0058A4', color:'#ffffff', border:'1px solid #003366' }}
+          onMouseEnter={e => { if (!e.currentTarget.disabled) e.currentTarget.style.background='#00458a'; }}
+          onMouseLeave={e => { e.currentTarget.style.background='#0058A4'; }}
+        >
+          {joining === session.id ? '…' : full ? 'Full' : 'Join →'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Host Study Group Modal ────────────────────────────────────────────────────
+function HostModal({ locations, onClose, onCreated }) {
+  const studyRooms = locations.filter(l => l.category === 'Study Area');
+  const [form, setForm] = useState({
+    room_id: studyRooms[0]?.id || '',
+    course_code: '',
+    creator_name: '',
+    description: '',
+    max_participants: 8,
+  });
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.course_code.trim() || !form.creator_name.trim()) {
+      setError('Course code and your name are required.');
+      return;
+    }
+    setLoading(true); setError('');
+    try {
+      const res = await fetch(`${API}/api/study-groups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...form,
+          room_id: Number(form.room_id),
+          max_participants: Number(form.max_participants),
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      onCreated(await res.json());
+      onClose();
+    } catch (err) { setError(err.message || 'Failed to create session'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop" onClick={onClose}>
+      <div
+        className="rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl border"
+        style={{ background:'#ffffff', borderColor:'#E2E8F0' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-lg font-bold text-uah-text">🎓 Host a UAH Study Group</h2>
+          <button onClick={onClose} className="text-uah-muted hover:text-slate-900 text-xl leading-none">✕</button>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg p-3 mb-4">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="text-xs text-uah-muted mb-1 block">Room / Location</label>
+            <select
+              value={form.room_id}
+              onChange={e => setForm({...form, room_id: e.target.value})}
+              className="cp-input w-full"
+            >
+              {studyRooms.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-uah-muted mb-1 block">Course Code *</label>
+              <input
+                value={form.course_code}
+                onChange={e => setForm({...form, course_code: e.target.value.toUpperCase()})}
+                placeholder="e.g. MA 172"
+                className="cp-input w-full"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-uah-muted mb-1 block">Your Name *</label>
+              <input
+                value={form.creator_name}
+                onChange={e => setForm({...form, creator_name: e.target.value})}
+                placeholder="Your name"
+                className="cp-input w-full"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-uah-muted mb-1 block">Description</label>
+            <textarea
+              value={form.description}
+              onChange={e => setForm({...form, description: e.target.value})}
+              placeholder="What are you working on?"
+              rows={2}
+              className="cp-input w-full"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-uah-muted mb-1 block">
+              Max Participants: <span className="font-bold text-uah-royal">{form.max_participants}</span>
+            </label>
+            <input
+              type="range" min={2} max={20}
+              value={form.max_participants}
+              onChange={e => setForm({...form, max_participants: e.target.value})}
+              className="w-full accent-uah-royal"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full font-bold py-2.5 rounded-xl transition text-uah-navy disabled:opacity-50"
+            style={{ background:'#0058A4' }}
+          >
+            {loading ? 'Creating…' : '🚀 Open to Study — Start Session'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ── Study Groups Tab ──────────────────────────────────────────────────────────
+function StudyGroupsTab({ locations, addNotification, onSmsToast }) {
+  const [sessions,        setSessions]        = useState([]);
+  const [loading,         setLoading]         = useState(true);
+  const [search,          setSearch]          = useState('');
+  const [openOnly,        setOpenOnly]        = useState(false);
+  const [joining,         setJoining]         = useState(null);
+  const [showModal,       setShowModal]       = useState(false);
+  const [registerSession, setRegisterSession] = useState(null);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (search)   params.set('course_code', search);
+      if (openOnly) params.set('open_only',   'true');
+      const res = await fetch(`${API}/api/study-groups?${params}`);
+      setSessions(await res.json());
+    } catch {}
+    setLoading(false);
+  }, [search, openOnly]);
+
+  useEffect(() => { fetchSessions(); }, [fetchSessions]);
+
+  // Sync WS updates
+  useEffect(() => {
+    const handler = (e) => {
+      const msg = JSON.parse(e.detail);
+      if (msg.type === 'study_group_created') {
+        setSessions(prev => prev.find(s => s.id === msg.session.id) ? prev : [msg.session, ...prev]);
+      }
+      if (msg.type === 'study_group_updated') {
+        setSessions(prev => prev.map(s => s.id === msg.session.id ? msg.session : s));
+      }
+    };
+    window.addEventListener('ws_message', handler);
+    return () => window.removeEventListener('ws_message', handler);
+  }, []);
+
+  const handleJoin = async (sessionId) => {
+    setJoining(sessionId);
+    try {
+      const res = await fetch(`${API}/api/study-groups/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      });
+      if (!res.ok) { const e = await res.json(); addNotification(`❌ ${e.detail}`); return; }
+      const updated = await res.json();
+      setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+    } catch { addNotification('❌ Could not reach server'); }
+    finally { setJoining(null); }
+  };
+
+  const handleCreated = (session) => {
+    setSessions(prev => [session, ...prev]);
+    addNotification(`🔥 ${session.course_code} Study Group formed in ${session.room_name}`);
+  };
+
+  const handleRegistered = (data) => {
+    addNotification(`🔔 ${data.student_name} registered for ${data.event_name}!`);
+    onSmsToast(data);
+  };
+
+  return (
+    <div className="space-y-5">
+      {showModal && (
+        <HostModal locations={locations} onClose={() => setShowModal(false)} onCreated={handleCreated} />
+      )}
+      {registerSession && (
+        <RegisterModal
+          session={registerSession}
+          onClose={() => setRegisterSession(null)}
+          onRegistered={handleRegistered}
+        />
+      )}
+
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex gap-2 flex-1 max-w-sm items-center">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value.toUpperCase())}
+            placeholder="🔍 Filter by course (MA 172…)"
+            className="cp-input flex-1"
+          />
+          <label className="flex items-center gap-1.5 text-sm text-uah-muted whitespace-nowrap cursor-pointer">
+            <input
+              type="checkbox"
+              checked={openOnly}
+              onChange={e => setOpenOnly(e.target.checked)}
+              className="accent-uah-royal"
+            />
+            Open only
+          </label>
+        </div>
+        <button
+          onClick={() => setShowModal(true)}
+          className="text-sm font-bold px-4 py-2 rounded-xl transition text-uah-navy"
+          style={{ background:'#0058A4' }}
+          onMouseEnter={e => e.currentTarget.style.background='#00bfff'}
+          onMouseLeave={e => e.currentTarget.style.background='#0058A4'}
+        >
+          ＋ Host Study Group
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center text-uah-muted py-16">Loading sessions…</div>
+      ) : sessions.length === 0 ? (
+        <div className="text-center text-uah-muted py-16">
+          <div className="text-4xl mb-3">📭</div>
+          <div className="font-medium">No study sessions found</div>
+          <div className="text-xs mt-1 text-uah-muted">Be the first Charger to host one!</div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {sessions.map(s => (
+            <StudySessionCard
+              key={s.id} session={s}
+              onJoin={handleJoin} joining={joining}
+              onRegister={setRegisterSession}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Campus Events Tab ─────────────────────────────────────────────────────────
+function CampusEventsTab({ activeUser, addNotification, addPushToast, addSmsToast }) {
+  const [events,    setEvents]    = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [regLoading, setRegLoading] = useState(null); // event id being registered
+
+  const fetchEvents = useCallback(async () => {
+    try {
+      const url = activeUser
+        ? `${API}/api/campus-events?user_id=${activeUser.user_id}`
+        : `${API}/api/campus-events`;
+      const res = await fetch(url);
+      setEvents(await res.json());
+    } catch {}
+    setLoading(false);
+  }, [activeUser]);
+
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // WS sync
+  useEffect(() => {
+    const handler = (e) => {
+      const msg = JSON.parse(e.detail);
+      if (msg.type === 'campus_event_updated') {
+        setEvents(prev => prev.map(ev => ev.id === msg.event.id ? { ...msg.event, registered: ev.registered } : ev));
+      }
+    };
+    window.addEventListener('ws_message', handler);
+    return () => window.removeEventListener('ws_message', handler);
+  }, []);
+
+  const handleRegister = async (ev) => {
+    if (!activeUser) { addNotification('⚠️ Please select a Demo Login account first'); return; }
+    if (ev.registered) { addNotification('ℹ️ You are already registered for this event'); return; }
+    setRegLoading(ev.id);
+    try {
+      const res = await fetch(`${API}/api/campus-events/${ev.id}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: activeUser.user_id }),
+      });
+      if (!res.ok) { const e = await res.json(); addNotification(`❌ ${e.detail}`); return; }
+      const data = await res.json();
+      // Update local state
+      setEvents(prev => prev.map(e => e.id === ev.id ? { ...data.event, registered: true } : e));
+      // Push notification toast
+      addPushToast({ event_name: data.event.title, location_name: data.event.location_name });
+      // SMS toast
+      addSmsToast({ student_name: data.student_name, event_name: data.event.title, phone_masked: data.phone_masked });
+      addNotification(`🔔 ${activeUser.name} registered for "${data.event.title}"!`);
+    } catch { addNotification('❌ Could not reach server'); }
+    finally { setRegLoading(null); }
+  };
+
+  if (loading) return <div className="text-center text-uah-muted py-20">Loading events…</div>;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-slate-900">🎪 Campus Events</h2>
+        {!activeUser && (
+          <span className="text-xs bg-yellow-50 border border-yellow-200 px-3 py-1.5 rounded-lg" style={{color:'#92400E'}}>
+            ⚠️ Log in via Demo Login to register
+          </span>
+        )}
+      </div>
+
+      {events.length === 0 ? (
+        <div className="text-center text-uah-muted py-20">
+          <div className="text-4xl mb-3">📭</div>
+          <div>No campus events right now</div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {events.map(ev => {
+            const pct = Math.round((ev.current_participants / ev.max_participants) * 100);
+            const full = ev.current_participants >= ev.max_participants;
+            return (
+              <div key={ev.id} className="cp-card rounded-xl p-4 fade-in transition-colors"
+                style={{ borderColor: ev.registered ? '#22C55E' : '#E2E8F0' }}>
+                <div className="flex justify-between items-start mb-2">
+                  <span style={{background:'#FFE27A', color:'#003366', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:700}}>
+                    {ev.category}
+                  </span>
+                  <div className="flex gap-1.5">
+                    {ev.registered && <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Registered</span>}
+                    {full && !ev.registered && <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Full</span>}
+                  </div>
+                </div>
+
+                <h3 className="text-slate-900 font-bold text-sm leading-snug mb-1">{ev.title}</h3>
+                <p className="text-uah-muted text-xs mb-0.5">📍 {ev.location_name}</p>
+                <p className="text-uah-muted text-xs mb-3 leading-snug">{ev.description}</p>
+
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mb-2">
+                  <div className="h-1.5 rounded-full transition-all duration-500"
+                    style={{width:`${pct}%`, background: ev.registered ? '#22C55E' : '#0058A4'}}/>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-uah-muted">{ev.current_participants}/{ev.max_participants} attending</span>
+                  <button
+                    onClick={() => handleRegister(ev)}
+                    disabled={regLoading === ev.id || full || ev.registered}
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={ev.registered
+                      ? { background:'#F0FDF4', color:'#16A34A', border:'1px solid #BBF7D0' }
+                      : { background:'#0058A4', color:'#ffffff' }}
+                  >
+                    {regLoading === ev.id ? '…' : ev.registered ? '✓ Registered' : full ? 'Full' : '🔔 Register'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── My Events Tab ─────────────────────────────────────────────────────────────
+function MyEventsTab({ activeUser, addNotification }) {
+  const [myEvents, setMyEvents] = useState([]);
+  const [loading,  setLoading]  = useState(false);
+  const [cancelling, setCancelling] = useState(null);
+
+  const fetchMyEvents = useCallback(async () => {
+    if (!activeUser) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/users/${activeUser.user_id}/my-events`);
+      setMyEvents(await res.json());
+    } catch {}
+    setLoading(false);
+  }, [activeUser]);
+
+  useEffect(() => { fetchMyEvents(); }, [fetchMyEvents]);
+
+  // WS sync — remove or update cancelled events
+  useEffect(() => {
+    const handler = (e) => {
+      const msg = JSON.parse(e.detail);
+      if (msg.type === 'campus_event_updated') {
+        setMyEvents(prev => prev.map(ev => ev.id === msg.event.id ? { ...ev, ...msg.event } : ev));
+      }
+    };
+    window.addEventListener('ws_message', handler);
+    return () => window.removeEventListener('ws_message', handler);
+  }, []);
+
+  const handleCancel = async (ev) => {
+    if (!activeUser) return;
+    setCancelling(ev.id);
+    try {
+      const res = await fetch(`${API}/api/campus-events/${ev.id}/register/${activeUser.user_id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) { const e = await res.json(); addNotification(`❌ ${e.detail}`); return; }
+      setMyEvents(prev => prev.filter(e => e.id !== ev.id));
+      addNotification(`🗑️ Registration cancelled for "${ev.title}"`);
+    } catch { addNotification('❌ Could not reach server'); }
+    finally { setCancelling(null); }
+  };
+
+  if (!activeUser) return (
+    <div className="text-center py-20">
+      <div className="text-5xl mb-4">🔐</div>
+      <div className="text-slate-900 font-semibold text-lg mb-2">Not logged in</div>
+      <div className="text-uah-muted text-sm">Select a Demo Login account from the header to view your registered events.</div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {/* Profile header */}
+      <div className="flex items-center gap-4 p-4 rounded-xl border cp-card">
+        <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-black text-uah-navy flex-shrink-0" style={{background:'#0058A4'}}>
+          {activeUser.avatar}
+        </div>
+        <div>
+          <div className="text-slate-900 font-bold text-base">{activeUser.name}</div>
+          <div className="text-uah-muted text-xs">{activeUser.email}</div>
+          <div className="text-uah-muted text-xs">{activeUser.phone}</div>
+        </div>
+        <div className="ml-auto text-right">
+          <div className="text-2xl font-black" style={{color:'#0058A4'}}>{myEvents.length}</div>
+          <div className="text-xs text-uah-muted">Registered</div>
+        </div>
+      </div>
+
+      <h2 className="text-base font-bold text-uah-text">📋 My Registered Events</h2>
+
+      {loading ? (
+        <div className="text-center text-uah-muted py-12">Loading your events…</div>
+      ) : myEvents.length === 0 ? (
+        <div className="text-center py-12">
+          <div className="text-4xl mb-3">📭</div>
+          <div className="text-uah-muted font-medium">No registered events yet</div>
+          <div className="text-uah-muted text-xs mt-1">Visit the Campus Events tab to register!</div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {myEvents.map(ev => {
+            const pct = Math.round((ev.current_participants / ev.max_participants) * 100);
+            return (
+              <div key={ev.id} className="flex items-center gap-4 p-4 rounded-xl border fade-in"
+                style={{background:'#ffffff', borderColor:'#E2E8F0'}}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span style={{background:'#FFE27A', color:'#003366', padding:'2px 8px', borderRadius:'9999px', fontSize:'11px', fontWeight:700}}>
+                      {ev.category}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">✓ Registered</span>
+                  </div>
+                  <div className="text-slate-900 font-semibold text-sm leading-snug">{ev.title}</div>
+                  <div className="text-uah-muted text-xs">📍 {ev.location_name}</div>
+                  <div className="text-uah-muted text-xs mt-0.5">
+                    Registered: {new Date(ev.registered_at).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <div className="flex-1 bg-slate-100 rounded-full h-1">
+                      <div className="h-1 rounded-full bg-emerald-500" style={{width:`${pct}%`}}/>
+                    </div>
+                    <span className="text-xs text-uah-muted">{ev.current_participants}/{ev.max_participants}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleCancel(ev)}
+                  disabled={cancelling === ev.id}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-lg transition flex-shrink-0 disabled:opacity-40"
+                  style={{background:'#FEF2F2', color:'#DC2626', border:'1px solid #FECDD3'}}
+                  onMouseEnter={e => e.currentTarget.style.background='#FEE2E2'}
+                  onMouseLeave={e => e.currentTarget.style.background='#FEF2F2'}
+                >
+                  {cancelling === ev.id ? '…' : 'Cancel'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
+function App() {
+  const [activeTab,    setActiveTab]    = useState('heatmap');
+  const [locations,    setLocations]    = useState([]);
+  const [liveNotifs,   setLiveNotifs]   = useState([]);
+  const [wsConnected,  setWsConnected]  = useState(false);
+  const [smsToasts,    setSmsToasts]    = useState([]);
+  const [pushToasts,   setPushToasts]   = useState([]);
+  const [activeUser,   setActiveUser]   = useState(DUMMY_USERS.std_01);
+  const wsRef = useRef(null);
+
+  const addNotification = useCallback((msg) => {
+    setLiveNotifs(prev => [...prev.slice(-24), msg]);
+  }, []);
+
+  const addSmsToast = useCallback((data) => {
+    const id = Date.now();
+    setSmsToasts(prev => [...prev, { id, ...data }]);
+  }, []);
+
+  const dismissSmsToast = useCallback((id) => {
+    setSmsToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const addPushToast = useCallback((data) => {
+    const id = Date.now() + 1;
+    setPushToasts(prev => [...prev, { id, ...data }]);
+  }, []);
+
+  const dismissPushToast = useCallback((id) => {
+    setPushToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // Initial fetch
+  useEffect(() => {
+    fetch(`${API}/api/heatmap`)
+      .then(r => r.json())
+      .then(data => setLocations(data))
+      .catch(() => addNotification('⚠️ Could not connect to CampusPulse backend'));
+  }, []);
+
+  // WebSocket
+  useEffect(() => {
+    let reconnectTimer;
+    const connect = () => {
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setWsConnected(true);
+        addNotification('✅ Connected to UAH CampusPulse live feed');
+      };
+      ws.onmessage = (evt) => {
+        window.dispatchEvent(new CustomEvent('ws_message', { detail: evt.data }));
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'initial_state') {
+          setLocations(msg.locations);
+        } else if (msg.type === 'tap_update') {
+          setLocations(prev => prev.map(l => l.id === msg.location.id ? msg.location : l));
+        } else if (msg.type === 'notification') {
+          addNotification(msg.message);
+        } else if (msg.type === 'REGISTRATION_ALERT') {
+          addNotification(msg.message);
+          addSmsToast({
+            student_name: msg.student_name,
+            event_name:   msg.event_name,
+            phone_masked: msg.phone_masked,
+          });
+        }
+      };
+      ws.onclose = () => {
+        setWsConnected(false);
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => { clearTimeout(reconnectTimer); wsRef.current?.close(); };
+  }, []);
+
+  const tabs = [
+    { id:'heatmap', label:'🗺️ Campus Heatmap' },
+    { id:'study',   label:'🎓 Study Matchmaker' },
+    { id:'events',  label:'🎪 Campus Events' },
+    { id:'myevents',label:'📋 My Events' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-uah-page">
+
+      {/* ── Masthead banner ── */}
+      <div className="w-full border-b-4" style={{background:'#0058A4', borderColor:'#FFE27A'}}>
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
+          {/* Logo + wordmark */}
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center font-black text-sm tracking-tight flex-shrink-0 border-2"
+              style={{background:'#FFE27A', color:'#003366', borderColor:'#FFE27A'}}
+            >
+              UAH
+            </div>
+            <div>
+              <div className="font-black text-white text-lg leading-tight tracking-tight">
+                UAH CampusPulse
+              </div>
+              <div className="text-xs font-semibold uppercase tracking-widest" style={{color:'#FFE27A'}}>
+                Charger Live Intelligence &nbsp;|&nbsp; The University of Alabama in Huntsville
+              </div>
+            </div>
+          </div>
+          {/* Right controls */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <WsStatus connected={wsConnected} />
+            <DemoLogin
+              activeUser={activeUser}
+              onLogin={setActiveUser}
+              onLogout={() => setActiveUser(null)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Nav tab bar ── */}
+      <div className="sticky top-0 z-40 shadow-sm" style={{background:'#1A64B7'}}>
+        <div className="max-w-7xl mx-auto px-4 flex gap-0 overflow-x-auto">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`px-5 py-3 text-sm font-semibold transition whitespace-nowrap ${activeTab === t.id ? 'tab-active' : 'tab-inactive'}`}
+            >
+              {t.label}
+              {t.id === 'myevents' && activeUser && (
+                <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full font-black"
+                  style={{background:'#FFE27A', color:'#003366'}}>
+                  {activeUser.avatar}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Live Alert Ticker ── */}
+      <AlertTicker liveNotifs={liveNotifs} />
+
+      {/* ── Main ── */}
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {activeTab === 'heatmap' && (
+          <HeatmapTab locations={locations} setLocations={setLocations} addNotification={addNotification} />
+        )}
+        {activeTab === 'study' && (
+          <StudyGroupsTab
+            locations={locations}
+            addNotification={addNotification}
+            onSmsToast={addSmsToast}
+          />
+        )}
+        {activeTab === 'events' && (
+          <CampusEventsTab
+            activeUser={activeUser}
+            addNotification={addNotification}
+            addPushToast={addPushToast}
+            addSmsToast={addSmsToast}
+          />
+        )}
+        {activeTab === 'myevents' && (
+          <MyEventsTab
+            activeUser={activeUser}
+            addNotification={addNotification}
+          />
+        )}
+      </main>
+
+      {/* ── Toast stacks ── */}
+      {pushToasts.map((t, i) => (
+        <div key={t.id} style={{ position:'fixed', top:`${76 + i * 118}px`, right:'16px', zIndex:9999 }}>
+          <PushToast toast={t} onDismiss={() => dismissPushToast(t.id)} />
+        </div>
+      ))}
+      {smsToasts.map((t, i) => (
+        <div key={t.id} style={{ position:'fixed', top:`${76 + pushToasts.length * 118 + i * 112}px`, right:'16px', zIndex:9998 }}>
+          <SmsToast toast={t} onDismiss={() => dismissSmsToast(t.id)} />
+        </div>
+      ))}
+
+      <footer className="border-t mt-12 py-4 text-center text-xs" style={{borderColor:'#E2E8F0', color:'#94A3B8'}}>
+        UAH CampusPulse — Charger Live Intelligence &nbsp;•&nbsp; University of Alabama in Huntsville
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
